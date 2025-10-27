@@ -4,7 +4,7 @@ import VideoPlayer from './VideoPlayer.jsx'; // Using your player
 import axios from 'axios';
 import './App.css'; // Your original App.css
 
-const SERVER_URL = 'http://localhost:5000';
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
 
 // --- THIS IS THE CONNECTION FIX ---
 const socket = io(SERVER_URL, {
