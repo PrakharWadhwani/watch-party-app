@@ -1,0 +1,160 @@
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.app-container {
+  display: flex;
+  gap: 20px;
+}
+
+.main-content {
+  flex: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.sidebar {
+  flex: 1;
+  background-color: #1a1a1a;
+  padding: 15px;
+  border-radius: 8px;
+  height: 70vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.room-controls,
+.video-controls {
+  background-color: #1a1a1a;
+  padding: 20px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.video-controls-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+}
+
+.video-controls-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.player-wrapper {
+  position: relative;
+  padding-top: 56.25%; /* 16:9 Aspect Ratio */
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.react-player {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.chat-box {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.messages {
+  flex-grow: 1;
+  overflow-y: auto;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 10px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.message {
+  background: #333;
+  padding: 5px 8px;
+  border-radius: 4px;
+}
+
+.message .sender {
+  font-weight: bold;
+  font-size: 0.8em;
+  color: #aaa;
+}
+
+.chat-input {
+  display: flex;
+  gap: 5px;
+}
+
+input[type='text'],
+input[type='file'] {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #555;
+  background: #333;
+  color: white;
+}
+
+input[type='text'] {
+  flex-grow: 1;
+}
+
+button {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #555;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+
+button:hover {
+  border-color: #646cff;
+}
+
+button:disabled {
+  background-color: #333;
+  cursor: not-allowed;
+  border-color: transparent;
+}
+
+.status-bar {
+  font-size: 0.9em;
+  color: #aaa;
+}
