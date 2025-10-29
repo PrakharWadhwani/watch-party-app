@@ -5,6 +5,7 @@ import axios from 'axios';
 import './App.css'; // Your original App.css
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
+console.log("Using SERVER_URL:", SERVER_URL); // <-- ADDED LOG
 
 // --- THIS IS THE CONNECTION FIX ---
 const socket = io(SERVER_URL, {
@@ -15,7 +16,7 @@ const socket = io(SERVER_URL, {
 function App() {
   const [room, setRoom] = useState('');
   const [joined, setJoined] = useState(false);
-  const [videoSrc, setVideoSrc] = useState(null); 
+  const [videoSrc, setVideoSrc] = useState(null);
   const [videoUrl, setVideoUrl] = useState('');
   const [videoFile, setVideoFile] = useState(null);
   const [playing, setPlaying] = useState(false);
@@ -24,12 +25,14 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
 
-  const isHost = myId === hostId;
+  // isHost will be calculated right before rendering
+  // const isHost = myId === hostId; // Moved calculation lower
 
   useEffect(() => {
     socket.on('connect', () => {
-      setMyId(socket.id);
-      console.log('Connected with ID:', socket.id);
+      const connectedId = socket.id; // Store in a variable first
+      setMyId(connectedId);
+      console.log('Connect Event: Set myId to:', connectedId); // <-- MODIFIED LOG
     });
 
     socket.on('video-set', (src) => {
@@ -39,15 +42,17 @@ function App() {
     });
 
     socket.on('room-state', (state) => {
-      console.log('Received room state:', state);
+      console.log('Raw received room state:', state); // <-- ADDED LOG
       setVideoSrc(state.videoSrc);
       setPlaying(state.playing);
       setHostId(state.host);
+      console.log('Room State Event: Set hostId to:', state.host); // <-- ADDED LOG
     });
 
     socket.on('new-host', (id) => {
-      console.log('New host:', id);
+      console.log('New host event received:', id); // <-- ADDED LOG
       setHostId(id);
+      console.log('New Host Event: Set hostId to:', id); // <-- ADDED LOG
     });
 
     socket.on('chat-message', (msg) => {
@@ -58,7 +63,7 @@ function App() {
       socket.disconnect();
     };
   }, []);
-  
+
   const handleJoin = () => {
     if (room) {
       socket.emit('join', room);
@@ -71,12 +76,16 @@ function App() {
   };
 
   const handleSetVideoUrl = () => {
-    if (!isHost) return;
+    // We calculate isHost here based on the *current* state
+    const currentIsHost = myId === hostId;
+    if (!currentIsHost) return;
     socket.emit('set-video', videoUrl);
   };
 
   const handleSetVideoFile = async () => {
-    if (!isHost || !videoFile) return;
+    // We calculate isHost here based on the *current* state
+    const currentIsHost = myId === hostId;
+    if (!currentIsHost || !videoFile) return;
 
     console.log('Step 1: Upload button clicked. Starting upload...');
     const formData = new FormData();
@@ -91,10 +100,10 @@ function App() {
 
       if (res.data && res.data.videoPath) {
         const fullVideoPath = `${SERVER_URL}${res.data.videoPath}`;
-        
+
         console.log('Step 3: Emitting "set-video" to server');
         socket.emit('set-video', fullVideoPath);
-      
+
       } else {
         console.error('CRITICAL ERROR: "videoPath" was not in server response.');
       }
@@ -110,6 +119,12 @@ function App() {
       setChatInput('');
     }
   };
+
+  // --- Calculate isHost right before rendering ---
+  console.log('Render Check - Values:', { myId, hostId }); // <-- ADDED LOG
+  const isHost = myId != null && hostId != null && myId === hostId; // Check for nulls too
+  console.log('Render Check - Result:', { isHost }); // <-- ADDED LOG
+  // ---
 
   if (!joined) {
     return (
@@ -131,14 +146,14 @@ function App() {
       <div className="main-content">
         <div className="status-bar">
           <p>Room: <strong>{room}</strong> | My ID: {myId} | Host ID: {hostId}
-          {isHost && <strong> (You are the host)</strong>}
+            {isHost && <strong> (You are the host)</strong>}
           </p>
         </div>
 
         <div className="player-wrapper">
-           <VideoPlayer
+          <VideoPlayer
             src={videoSrc}
-           />
+          />
         </div>
 
         <div className="video-controls">
@@ -151,7 +166,7 @@ function App() {
                 placeholder="https://example.com/video.mp4"
                 value={videoUrl}
                 onChange={(e) => setVideoUrl(e.target.value)}
-                disabled={!isHost}
+                disabled={!isHost} // Uses the isHost calculated just before render
               />
               <button onClick={handleSetVideoUrl} disabled={!isHost}>
                 Set URL
@@ -165,14 +180,14 @@ function App() {
                 // --- THIS IS THE TYPO FIX ---
                 onChange={(e) => setVideoFile(e.target.files[0])}
                 // --- END OF FIX ---
-                disabled={!isHost}
+                disabled={!isHost} // Uses the isHost calculated just before render
               />
               <button onClick={handleSetVideoFile} disabled={!isHost || !videoFile}>
                 Upload & Set
               </button>
             </div>
           </div>
-          <button onClick={handleBecomeHost} disabled={!isHost}>
+          <button onClick={handleBecomeHost} disabled={isHost}>
             Become Host
           </button>
         </div>
