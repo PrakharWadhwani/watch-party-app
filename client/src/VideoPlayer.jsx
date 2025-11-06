@@ -49,7 +49,7 @@ const VideoPlayer = ({ src }) => {
   const speedMenuRef = useRef(null);
   const centerAnimationTimer = useRef(null);
 
-  // --- THIS IS THE "PLAYER NOT UPDATING" FIX ---
+  
   useEffect(() => {
     if (videoRef.current) {
       if (src) {
@@ -70,7 +70,7 @@ const VideoPlayer = ({ src }) => {
       }
     }
   }, [src]); // This effect runs *only* when the 'src' prop changes
-  // --- END OF FIX ---
+
 
   // --- Animation Trigger Helper ---
   const triggerCenterAnimation = useCallback((type) => {
@@ -258,7 +258,6 @@ const VideoPlayer = ({ src }) => {
         onPause={() => setIsPlaying(false)} 
         onEnded={() => setIsPlaying(false)} 
         muted={isMuted}
-        // playbackRate prop removed
       >
         {/* Captions removed */}
       </video>
