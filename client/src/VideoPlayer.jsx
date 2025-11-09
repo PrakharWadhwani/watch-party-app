@@ -192,7 +192,7 @@ const VideoPlayer = forwardRef(({
 
   // --- 6. Change seek functions to call onSeek prop ---
   const seek = useCallback((amount) => {
-      if (!videoRef.current || !duration) return;
+      if (!videoRef.current || !duration || !isHost) return;
       const oldTime = videoRef.current.currentTime; 
       const newTime = Math.max(0, Math.min(duration, oldTime + amount));
       
@@ -208,7 +208,7 @@ const VideoPlayer = forwardRef(({
       setSkipIndicator({ direction: newDirection, amount: accumulatedAmount }); setSkipIndicatorKey(prev => prev + 1);
       skipIndicatorTimer.current = setTimeout(() => setSkipIndicator({ direction: null, amount: 0 }), 800);
       
-    }, [duration, skipIndicator, onSeek]);
+    }, [duration, skipIndicator, onSeek, isHost]);
 
   const handleTimelineSeek = useCallback((e) => {
     if (!timelineContainerRef.current || !videoRef.current || !duration) return;
@@ -325,7 +325,7 @@ const VideoPlayer = forwardRef(({
         // These are now for local state, not sync
         onPlay={() => { /* The playing prop handles this */ }} 
         onPause={() => { /* The playing prop handles this */ }} 
-        onEnded={onPause} // Tell App.jsx we paused
+        onEnded={() => {if (isHost) onPause()}} // Tell App.jsx we paused
         muted={isMuted}
       >
       </video>

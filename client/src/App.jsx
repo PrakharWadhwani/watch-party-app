@@ -19,13 +19,16 @@ function App() {
   const [videoSrc, setVideoSrc] = useState(null); 
   const [videoUrl, setVideoUrl] = useState('');
   const [videoFile, setVideoFile] = useState(null);
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(false); // Master "playing" state
   const [hostId, setHostId] = useState(null);
   const [myId, setMyId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
 
-  // isHost will be calculated right before rendering
+  const playerRef = useRef(null); // Ref to call VideoPlayer's methods
+  const ignoreEventsRef = useRef(false); // To prevent event loops
+
+  const isHost = myId != null && hostId != null && myId === hostId;
 
   useEffect(() => {
     socket.on('connect', () => {
@@ -37,7 +40,7 @@ function App() {
     socket.on('video-set', (src) => {
       console.log('Video set to:', src);
       setVideoSrc(src);
-      setPlaying(false);
+      setPlaying(false); // Pause when a new video is set
     });
 
     socket.on('room-state', (state) => {
@@ -46,6 +49,12 @@ function App() {
       setPlaying(state.playing);
       setHostId(state.host);
       console.log('Room State Event: Set hostId to:', state.host); // <-- ADDED LOG
+      
+      // When joining, seek to the correct time
+      // Use a timeout to give the player time to load
+      setTimeout(() => {
+        handleSeekFromSocket(state.currentTime);
+      }, 1000); // 1 second delay
     });
 
     socket.on('new-host', (id) => {
@@ -53,6 +62,25 @@ function App() {
       setHostId(id);
       console.log('New Host Event: Set hostId to:', id); // <-- ADDED LOG
     });
+    
+    // --- These listeners now control the playing state ---
+    socket.on('played', (currentTime) => {
+      console.log('Received PLAY event');
+      setPlaying(true);
+      handleSeekFromSocket(currentTime); // Also sync time on play
+    });
+
+    socket.on('paused', (currentTime) => {
+      console.log('Received PAUSE event');
+      setPlaying(false);
+      handleSeekFromSocket(currentTime); // Also sync time on pause
+    });
+    
+    socket.on('seeked', (time) => {
+      console.log(`Received SEEK event to: ${time}`);
+      handleSeekFromSocket(time);
+    });
+    // ---
 
     socket.on('chat-message', (msg) => {
       setMessages((prevMessages) => [...prevMessages, msg]);
@@ -61,7 +89,21 @@ function App() {
     return () => {
       socket.disconnect();
     };
-  }, []);
+  }, []); // Empty dependency array, runs once
+
+  // --- Universal seek function called by socket events ---
+  const handleSeekFromSocket = (time) => {
+    if (ignoreEventsRef.current) return; // Don't seek if we just sent it
+    if (!playerRef.current) return;
+    
+    ignoreEventsRef.current = true;
+    playerRef.current.seekTo(time);
+    
+    // Set a timer to re-enable emit events
+    setTimeout(() => {
+      ignoreEventsRef.current = false;
+    }, 1000); // 1 second grace period
+  };
   
   const handleJoin = () => {
     if (room) {
@@ -75,36 +117,31 @@ function App() {
   };
 
   const handleSetVideoUrl = () => {
-    // We calculate isHost here based on the *current* state
-    const currentIsHost = myId === hostId;
-    if (!currentIsHost) return;
-    
+    if (!isHost) return;
     console.log('Step 3: Emitting "set-video" to server');
     socket.emit('set-video', videoUrl);
   };
 
   const handleSetVideoFile = async () => {
-    // We calculate isHost here based on the *current* state
-    const currentIsHost = myId === hostId;
-    if (!currentIsHost || !videoFile) return;
+    if (!isHost || !videoFile) return;
 
     console.log('Step 1: Upload button clicked. Starting upload...');
     const formData = new FormData();
     formData.append('video', videoFile);
 
     try {
-      const res = await axios.post(`${SERVER_URL}/upload`, formData, {
+      const res = await axios.post(`${SERVER_URL}/upload`, formData, { // Fixed template literal
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
       console.log('Step 2: Upload successful. Server responded:', res.data);
 
       if (res.data && res.data.videoPath) {
-        const fullVideoPath = `${SERVER_URL}${res.data.videoPath}`;
+        const fullVideoPath = `${SERVER_URL}${res.data.videoPath}`; // Fixed template literal
 
         console.log('Step 3: Emitting "set-video" to server');
         socket.emit('set-video', fullVideoPath);
-
+      
       } else {
         console.error('CRITICAL ERROR: "videoPath" was not in server response.');
       }
@@ -121,9 +158,37 @@ function App() {
     }
   };
 
+  // --- New Handlers for the Controlled Player ---
+  const handlePlay = () => {
+    if (!isHost || ignoreEventsRef.current || playing) return;
+    console.log('Host clicked PLAY');
+    setPlaying(true); // Update local state immediately
+    
+    const currentTime = playerRef.current ? playerRef.current.getCurrentTime() : 0;
+    socket.emit('play', currentTime);
+  };
+  
+  const handlePause = () => {
+    if (!isHost || ignoreEventsRef.current || !playing) return;
+    console.log('Host clicked PAUSE');
+    setPlaying(false); // Update local state immediately
+
+    const currentTime = playerRef.current ? playerRef.current.getCurrentTime() : 0;
+    socket.emit('pause', currentTime);
+  };
+  
+  const handleSeek = (time) => {
+    if (!isHost || ignoreEventsRef.current) return;
+    console.log(`Host SEEKED to ${time}`);
+    // We update our own player locally inside VideoPlayer.jsx
+    // We just need to tell the server
+    socket.emit('seek', time);
+  };
+  // ---
+
   // --- Calculate isHost right before rendering ---
   console.log('Render Check - Values:', { myId, hostId }); // <-- ADDED LOG
-  const isHost = myId != null && hostId != null && myId === hostId; // Check for nulls too
+  // const isHost = myId != null && hostId != null && myId === hostId; // Check for nulls too
   console.log('Render Check - Result:', { isHost }); // <-- ADDED LOG
   // ---
 
@@ -147,14 +212,21 @@ function App() {
       <div className="main-content">
         <div className="status-bar">
           <p>Room: <strong>{room}</strong> | My ID: {myId} | Host ID: {hostId}
-            {isHost && <strong> (You are the host)</strong>}
+          {isHost && <strong> (You are the host)</strong>}
           </p>
         </div>
 
         <div className="player-wrapper">
-          <VideoPlayer
+           <VideoPlayer
+            ref={playerRef} // Give the ref
             src={videoSrc}
-          />
+            // Pass down the new props
+            isHost={isHost}
+            playing={playing}
+            onPlay={handlePlay}
+            onPause={handlePause}
+            onSeek={handleSeek}
+           />
         </div>
 
         <div className="video-controls">
@@ -188,7 +260,7 @@ function App() {
               </button>
             </div>
           </div>
-          <button onClick={handleBecomeHost} disabled={isHost}>
+          <button onClick={handleBecomeHost} disabled={!isHost}>
             Become Host
           </button>
         </div>
