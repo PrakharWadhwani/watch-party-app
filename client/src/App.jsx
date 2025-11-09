@@ -1,29 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
+import VideoPlayer from './VideoPlayer.jsx'; // Using your player
 import axios from 'axios';
-
-// --- Player Imports ---
-import VideoPlayer from './VideoPlayer.jsx';        // Your custom player for files
-import ReactPlayer from 'react-player';         // The player for YouTube/etc
-
-// --- CSS Imports ---
-import './App.css'; 
-import './PlayerWrapper.css'; // Your new CSS file
+import './App.css'; // Your original App.css
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
 console.log("Using SERVER_URL:", SERVER_URL);
 
+// --- THIS IS THE CONNECTION FIX ---
 const socket = io(SERVER_URL, {
   transports: ['polling'] // Force it to NOT use WebSockets
 });
+// --- END OF FIX ---
 
 function App() {
   const [room, setRoom] = useState('');
   const [joined, setJoined] = useState(false);
-  const [videoSrc, setVideoSrc] = useState(null);
+  const [videoSrc, setVideoSrc] = useState(null); 
   const [videoUrl, setVideoUrl] = useState('');
   const [videoFile, setVideoFile] = useState(null);
-  const [playing, setPlaying] = useState(false); // This will be used for ReactPlayer
+  const [playing, setPlaying] = useState(false);
   const [hostId, setHostId] = useState(null);
   const [myId, setMyId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -33,46 +29,40 @@ function App() {
 
   useEffect(() => {
     socket.on('connect', () => {
-      const connectedId = socket.id; 
+      const connectedId = socket.id; // Store in a variable first
       setMyId(connectedId);
-      console.log('Connect Event: Set myId to:', connectedId); 
+      console.log('Connect Event: Set myId to:', connectedId); // <-- MODIFIED LOG
     });
 
     socket.on('video-set', (src) => {
       console.log('Video set to:', src);
       setVideoSrc(src);
-      setPlaying(true); // Tell ReactPlayer to auto-play
+      setPlaying(false);
     });
 
     socket.on('room-state', (state) => {
-      console.log('Raw received room state:', state); 
+      console.log('Raw received room state:', state); // <-- ADDED LOG
       setVideoSrc(state.videoSrc);
       setPlaying(state.playing);
       setHostId(state.host);
-      console.log('Room State Event: Set hostId to:', state.host); 
+      console.log('Room State Event: Set hostId to:', state.host); // <-- ADDED LOG
     });
 
     socket.on('new-host', (id) => {
-      console.log('New host event received:', id); 
+      console.log('New host event received:', id); // <-- ADDED LOG
       setHostId(id);
-      console.log('New Host Event: Set hostId to:', id); 
+      console.log('New Host Event: Set hostId to:', id); // <-- ADDED LOG
     });
 
     socket.on('chat-message', (msg) => {
       setMessages((prevMessages) => [...prevMessages, msg]);
     });
-    
-    // --- NOTE: Play/Pause/Seek events are not yet handled ---
-    // This is the next step for full sync
-    // socket.on('played', () => setPlaying(true));
-    // socket.on('paused', () => setPlaying(false));
-    // etc.
 
     return () => {
       socket.disconnect();
     };
   }, []);
-
+  
   const handleJoin = () => {
     if (room) {
       socket.emit('join', room);
@@ -85,13 +75,16 @@ function App() {
   };
 
   const handleSetVideoUrl = () => {
+    // We calculate isHost here based on the *current* state
     const currentIsHost = myId === hostId;
     if (!currentIsHost) return;
+    
     console.log('Step 3: Emitting "set-video" to server');
     socket.emit('set-video', videoUrl);
   };
 
   const handleSetVideoFile = async () => {
+    // We calculate isHost here based on the *current* state
     const currentIsHost = myId === hostId;
     if (!currentIsHost || !videoFile) return;
 
@@ -108,8 +101,10 @@ function App() {
 
       if (res.data && res.data.videoPath) {
         const fullVideoPath = `${SERVER_URL}${res.data.videoPath}`;
+
         console.log('Step 3: Emitting "set-video" to server');
         socket.emit('set-video', fullVideoPath);
+
       } else {
         console.error('CRITICAL ERROR: "videoPath" was not in server response.');
       }
@@ -126,18 +121,10 @@ function App() {
     }
   };
 
-  // --- Calculate isHost and check video type ---
-  console.log('Render Check - Values:', { myId, hostId }); 
-  const isHost = myId != null && hostId != null && myId === hostId;
-  console.log('Render Check - Result:', { isHost });
-  
-  // --- NEW LOGIC: Check if the source is a YouTube link ---
-  // This checks if the videoSrc is not null AND includes youtube.com or youtu.be
-  const isPlatformVideo = videoSrc && (
-    videoSrc.includes('youtube.com') || 
-    videoSrc.includes('youtu.be')
-    // You could add || videoSrc.includes('twitch.tv') here later
-  );
+  // --- Calculate isHost right before rendering ---
+  console.log('Render Check - Values:', { myId, hostId }); // <-- ADDED LOG
+  const isHost = myId != null && hostId != null && myId === hostId; // Check for nulls too
+  console.log('Render Check - Result:', { isHost }); // <-- ADDED LOG
   // ---
 
   if (!joined) {
@@ -164,30 +151,11 @@ function App() {
           </p>
         </div>
 
-        {/* --- NEW CONDITIONAL RENDERING --- */}
         <div className="player-wrapper">
-          {isPlatformVideo ? (
-            <ReactPlayer
-              className="react-player" // This class is targeted by PlayerWrapper.css
-              url={videoSrc}
-              width="100%"
-              height="100%"
-              controls={true} // Use the built-in YouTube controls
-              playing={playing} // Pass the playing state
-              // --- TODO: Add event handlers to EMIT sync events ---
-              // These are needed for full sync, but not for just playing
-              // onPlay={() => isHost && socket.emit('play')}
-              // onPause={() => isHost && socket.emit('pause')}
-              // onSeek={(seconds) => isHost && socket.emit('seek', seconds)}
-            />
-          ) : (
-            <VideoPlayer // Your custom player
-              src={videoSrc}
-            />
-          )}
+          <VideoPlayer
+            src={videoSrc}
+          />
         </div>
-        {/* --- END OF NEW LOGIC --- */}
-
 
         <div className="video-controls">
           <h3>Video Controls</h3>
@@ -196,10 +164,10 @@ function App() {
               <label>Set Video from URL:</label>
               <input
                 type="text"
-                placeholder="YouTube link or direct file URL"
+                placeholder="https://example.com/video.mp4"
                 value={videoUrl}
-                onChange={(e) => setVideoUrl(e.target.value)} // <-- TYPO FIX
-                disabled={!isHost} 
+                onChange={(e) => setVideoUrl(e.target.value)}
+                disabled={!isHost} // Uses the isHost calculated just before render
               />
               <button onClick={handleSetVideoUrl} disabled={!isHost}>
                 Set URL
@@ -210,22 +178,24 @@ function App() {
               <input
                 type="file"
                 accept="video/*"
+                // --- THIS IS THE TYPO FIX ---
                 onChange={(e) => setVideoFile(e.target.files[0])}
-                disabled={!isHost} 
+                // --- END OF FIX ---
+                disabled={!isHost} // Uses the isHost calculated just before render
               />
               <button onClick={handleSetVideoFile} disabled={!isHost || !videoFile}>
                 Upload & Set
               </button>
             </div>
           </div>
-          <button onClick={handleBecomeHost} disabled={!isHost}>
+          <button onClick={handleBecomeHost} disabled={isHost}>
             Become Host
           </button>
         </div>
       </div>
 
       <div className="sidebar">
-         <h3>Chat</h3>
+        <h3>Chat</h3>
         <div className="chat-box">
           <div className="messages">
             {messages.map((msg, index) => (
