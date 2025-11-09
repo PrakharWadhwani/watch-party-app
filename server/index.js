@@ -28,15 +28,10 @@ const io = new Server(server, {
 // CORS setup for Express
 app.use(cors());
 
-// --- THIS IS THE CORRECTED POSITION & BLOCK ---
 // Serve static video files with correct content types
-// This MUST be before other app.get() routes
 app.use('/videos', express.static(path.join(__dirname, 'videos'), {
   setHeaders: (res, filePath) => {
-    // This header allows the video to be embedded on other origins (like localhost:5173)
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-
-    // This block ensures videos play in the browser, not download
     const ext = path.extname(filePath).toLowerCase();
     if (ext === '.mp4') {
       res.setHeader('Content-Type', 'video/mp4');
@@ -49,9 +44,8 @@ app.use('/videos', express.static(path.join(__dirname, 'videos'), {
     }
   }
 }));
-// --- END OF FIX ---
 
-// Multer setup for file uploads
+// Multer setup
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, 'videos/');
@@ -67,11 +61,9 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     console.log('Received file mimetype:', file.mimetype); 
     const allowedExts = ['.mp4', '.webm', '.ogg', '.wmv', '.mkv'];
-    
     const isVideoMime = file.mimetype.startsWith('video/');
     const ext = path.extname(file.originalname).toLowerCase();
     const isVideoExt = allowedExts.includes(ext);
-
     if (isVideoMime || isVideoExt) {
       cb(null, true);
     } else {
@@ -103,10 +95,7 @@ io.on('connection', (socket) => {
   };
 
   socket.on('join', (room) => {
-    // --- THIS IS THE DEBUGGING LINE ---
     console.log(`User ${socket.id} trying to join room: '${room}'`);
-    // --- END OF NEW LINE ---
-
     const currentRoom = getRoom();
     if (currentRoom) {
       socket.leave(currentRoom);
@@ -125,6 +114,7 @@ io.on('connection', (socket) => {
     } else {
       console.log(`Joining existing room: '${room}'`);
     }
+    // Send the full current state to the user who just joined
     socket.emit('room-state', roomState[room]);
     io.to(room).emit('new-host', roomState[room].host);
   });
@@ -143,31 +133,37 @@ io.on('connection', (socket) => {
     console.log(`Host ${socket.id} set video for room '${room}' to: ${videoSrc}`);
     
     roomState[room].videoSrc = videoSrc;
-    roomState[room].playing = false;
+    roomState[room].playing = false; // Pause video on new set
     roomState[room].currentTime = 0;
-    io.to(room).emit('video-set', videoSrc);
+    io.to(room).emit('video-set', videoSrc); // Tell ALL clients (including host)
   });
 
   socket.on('play', (currentTime) => {
     const room = getRoom();
     if (!room || !roomState[room] || roomState[room].host !== socket.id) return;
+    console.log(`Host ${socket.id} PLAYED room '${room}' at ${currentTime}`);
     roomState[room].playing = true;
     roomState[room].currentTime = currentTime;
+    // Broadcast to everyone ELSE
     socket.broadcast.to(room).emit('played', currentTime);
   });
 
   socket.on('pause', (currentTime) => {
     const room = getRoom();
     if (!room || !roomState[room] || roomState[room].host !== socket.id) return;
+    console.log(`Host ${socket.id} PAUSED room '${room}' at ${currentTime}`);
     roomState[room].playing = false;
     roomState[room].currentTime = currentTime;
+    // Broadcast to everyone ELSE
     socket.broadcast.to(room).emit('paused', currentTime);
   });
 
   socket.on('seek', (currentTime) => {
     const room = getRoom();
     if (!room || !roomState[room] || roomState[room].host !== socket.id) return;
+    console.log(`Host ${socket.id} SEEKED room '${room}' to: ${currentTime}`);
     roomState[room].currentTime = currentTime;
+    // Broadcast to everyone ELSE
     socket.broadcast.to(room).emit('seeked', currentTime);
   });
 
@@ -177,26 +173,46 @@ io.on('connection', (socket) => {
     io.to(room).emit('chat-message', { id: socket.id, message });
   });
 
+  // --- THIS IS THE FIXED DISCONNECT HANDLER ---
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);
     const room = getRoom();
     if (!room || !roomState[room]) return;
 
+    // Check if the disconnected user was the host
     if (roomState[room].host === socket.id) {
       console.log(`Host ${socket.id} disconnected from room '${room}'`);
+      
+      // Find remaining clients
       const clients = io.sockets.adapter.rooms.get(room);
+      
       if (clients && clients.size > 0) {
+        // --- THIS IS THE NEW LOGIC ---
+        // 1. Promote a new host
         const newHostId = Array.from(clients)[0];
         roomState[room].host = newHostId;
         console.log(`New host for room '${room}' is: ${newHostId}`);
+
+        // 2. Reset the room state
+        roomState[room].videoSrc = null;
+        roomState[room].playing = false;
+        roomState[room].currentTime = 0;
+        
+        // 3. Tell everyone who the new host is
         io.to(room).emit('new-host', newHostId);
+        // 4. Tell everyone to clear their video player
+        io.to(room).emit('video-set', null);
+        // --- END OF NEW LOGIC ---
+
       } else {
+        // Room is now empty, delete it
         console.log(`Room '${room}' is empty. Deleting state.`);
         delete roomState[room];
       }
     }
   });
 });
+// --- END OF FIX ---
 
 const PORT = 5000;
 server.listen(PORT, () => {
