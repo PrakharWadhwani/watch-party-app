@@ -183,11 +183,43 @@ io.on('connection', (socket) => {
     io.to(room).emit('chat-message', { id: socket.id, message });
   });
 
-  // --- THIS IS THE FIXED DISCONNECT HANDLER ---
+  // --- NEW FEATURE: Handle host request from a guest ---
+  socket.on('request-host-control', () => {
+    const room = getRoom();
+    if (!room || !roomState[room]) return;
+
+    const currentHostId = roomState[room].host;
+    if (currentHostId === socket.id) return; // Host can't request from themself
+
+    // Send the request only to the current host
+    console.log(`User ${socket.id} is requesting host from ${currentHostId}`);
+    io.to(currentHostId).emit('host-request-received', { 
+      requesterId: socket.id 
+    });
+  });
+
+  // --- NEW FEATURE: Handle host approval ---
+  socket.on('approve-host-transfer', ({ newHostId }) => {
+    const room = getRoom();
+    if (!room || !roomState[room] || roomState[room].host !== socket.id) return;
+
+    // Verify the new host is actually in the room
+    const clients = io.sockets.adapter.rooms.get(room);
+    if (clients && clients.has(newHostId)) {
+      console.log(`Host ${socket.id} transferring host to ${newHostId}`);
+      roomState[room].host = newHostId;
+      // Tell everyone (including new host) about the change
+      io.to(room).emit('new-host', newHostId);
+    } else {
+      console.log(`Failed to transfer host: User ${newHostId} not in room.`);
+    }
+  });
+
+
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);
     
-    // --- FIX: Use the reliable socket.currentRoom property ---
+    // Use the reliable socket.currentRoom property
     const room = socket.currentRoom; 
     
     if (!room || !roomState[room]) {
@@ -196,17 +228,25 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Check if the disconnected user was the host
+
+    const clientsInRoom = io.sockets.adapter.rooms.get(room);
+    const otherClients = new Set();
+    if (clientsInRoom) {
+      clientsInRoom.forEach(clientId => {
+        if (clientId !== socket.id) {
+          otherClients.add(clientId);
+        }
+      });
+    }
+
+    // 2. Check if the disconnecting user was the host
     if (roomState[room].host === socket.id) {
       console.log(`Host ${socket.id} disconnected from room '${room}'`);
       
-      // Find remaining clients
-      const clients = io.sockets.adapter.rooms.get(room);
-      
-      if (clients && clients.size > 0) {
-        // --- THIS IS THE NEW LOGIC ---
+      // 3. Promote a new host if others are left
+      if (otherClients.size > 0) {
         // 1. Promote a new host
-        const newHostId = Array.from(clients)[0];
+        const newHostId = Array.from(otherClients)[0]; // Get the first user
         roomState[room].host = newHostId;
         console.log(`New host for room '${room}' is: ${newHostId}`);
 
@@ -219,17 +259,15 @@ io.on('connection', (socket) => {
         io.to(room).emit('new-host', newHostId);
         // 4. Tell everyone to clear their video player
         io.to(room).emit('video-set', null);
-        // --- END OF NEW LOGIC ---
 
       } else {
-        // Room is now empty, delete it
+        // 4. The host was the last one. Delete the room.
         console.log(`Room '${room}' is empty. Deleting state.`);
         delete roomState[room];
       }
     }
   });
 });
-// --- END OF FIX ---
 
 const PORT = 5000;
 server.listen(PORT, () => {

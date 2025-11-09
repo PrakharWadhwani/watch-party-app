@@ -160,6 +160,7 @@ function App() {
 
   // --- New Handlers for the Controlled Player ---
   const handlePlay = () => {
+    // This check is now CRITICAL, as non-hosts can click the button
     if (!isHost || ignoreEventsRef.current || playing) return;
     console.log('Host clicked PLAY');
     setPlaying(true); // Update local state immediately
@@ -169,6 +170,7 @@ function App() {
   };
   
   const handlePause = () => {
+    // This check is now CRITICAL, as non-hosts can click the button
     if (!isHost || ignoreEventsRef.current || !playing) return;
     console.log('Host clicked PAUSE');
     setPlaying(false); // Update local state immediately
@@ -260,7 +262,10 @@ function App() {
               </button>
             </div>
           </div>
-          <button onClick={handleBecomeHost} disabled={!isHost}>
+          <button 
+            onClick={handleBecomeHost} 
+            disabled={isHost} // <-- MODIFICATION: Changed from '!isHost' to 'isHost'
+          >
             Become Host
           </button>
         </div>

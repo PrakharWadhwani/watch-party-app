@@ -96,13 +96,13 @@ const VideoPlayer = forwardRef(({
       if (src) {
         console.log('[VideoPlayer.jsx] src prop changed. Forcing load:', src);
         videoRef.current.src = src; 
-        videoRef.current.load();     
+        videoRef.current.load();      
         setCurrentTime(0);
         setDuration(0);
       } else {
         console.log('[VideoPlayer.jsx] src prop is null. Unloading video.');
         videoRef.current.removeAttribute('src'); 
-        videoRef.current.load();               
+        videoRef.current.load();              
       }
     }
   }, [src]);
@@ -124,6 +124,7 @@ const VideoPlayer = forwardRef(({
   // --- 5. Change togglePlayPause to call props ---
   const togglePlayPause = useCallback(() => {
     // This function no longer plays/pauses. It just tells the parent.
+    // The parent (App.jsx) will check if the user isHost
     if (playing) {
       onPause(); // Tell App.jsx we want to pause
       triggerCenterAnimation('pause');
@@ -288,13 +289,23 @@ const VideoPlayer = forwardRef(({
         case 'Escape': if (isFullscreen) { e.preventDefault(); toggleFullscreen(); } if (isSpeedMenuOpen) { e.preventDefault(); setIsSpeedMenuOpen(false); } break;
       }
       
-      // Host-only controls
-      if (!isHost) return;
+      // Host-only controls (play/pause/seek)
+      // We check isHost here OR in the function itself (like togglePlayPause does in App.jsx)
+      // For simplicity, we'll keep the keydown checks tied to isHost
+      if (!isHost) {
+          // --- MODIFICATION: Allow 'k' and ' ' for non-hosts ---
+          // They will call togglePlayPause, which calls handlePlay/handlePause in App.jsx
+          // App.jsx will then use its own isHost check to prevent emitting
+          switch (e.key) {
+            case ' ': case 'k': e.preventDefault(); togglePlayPause(); break;
+          }
+          return; // Don't process seek keys for non-hosts
+      }
       
       const num = parseFloat(e.key);
       if (!isNaN(num) && num >= 0 && num <= 9) { e.preventDefault(); if (videoRef.current && duration > 0) { const newT = duration * (num / 10); videoRef.current.currentTime = newT; setCurrentTime(newT); onSeek(newT); } return; }
       switch (e.key) {
-        case ' ': case 'k': e.preventDefault(); togglePlayPause(); break;
+        case ' ': case 'k': e.preventDefault(); togglePlayPause(); break; // This will now also work for hosts
         case 'ArrowLeft': case 'j': e.preventDefault(); seek(-10); break;
         case 'ArrowRight': case 'l': e.preventDefault(); seek(10); break;
       }
@@ -319,7 +330,7 @@ const VideoPlayer = forwardRef(({
         ref={videoRef} 
         src={src}
         className="vp-video-element" 
-        onClick={isHost ? togglePlayPause : undefined} // Only host can click
+        onClick={togglePlayPause} // <-- MODIFICATION: Removed 'isHost' check
         onTimeUpdate={handleTimeUpdate} 
         onLoadedMetadata={handleLoadedMetadata} 
         // These are now for local state, not sync
@@ -330,20 +341,20 @@ const VideoPlayer = forwardRef(({
       >
       </video>
 
-       {centerAnimation && (
-        <div className="vp-center-animation" key={centerAnimationKey}>
-          {centerAnimation === 'play' && <Play size={50} />}
-          {centerAnimation === 'pause' && <Pause size={50} />}
-          {centerAnimation === 'volume' && (
-            <div className="vp-center-volume-wrapper">
-              {centerVolumePercent !== null && ( 
-                <span className="vp-center-volume-text">{centerVolumePercent}%</span>
-              )}
-              {renderVolumeIcon()}
-            </div>
-          )}
-        </div>
-      )}
+        {centerAnimation && (
+         <div className="vp-center-animation" key={centerAnimationKey}>
+           {centerAnimation === 'play' && <Play size={50} />}
+           {centerAnimation === 'pause' && <Pause size={50} />}
+           {centerAnimation === 'volume' && (
+             <div className="vp-center-volume-wrapper">
+               {centerVolumePercent !== null && ( 
+                 <span className="vp-center-volume-text">{centerVolumePercent}%</span>
+               )}
+               {renderVolumeIcon()}
+             </div>
+           )}
+         </div>
+       )}
       {skipIndicator.direction && (<div key={skipIndicatorKey} className={`vp-skip-indicator vp-skip-indicator-${skipIndicator.direction}`}><span>{skipIndicator.direction === 'backward' ? '-' : '+'}{skipIndicator.amount}</span><div className="vp-skip-arrow-container">{skipIndicator.direction === 'backward' ? (<><ChevronLeft size={32} strokeWidth={2.5} className="vp-skip-arrow vp-skip-arrow-fixed" /><ChevronLeft size={32} strokeWidth={2.5} className="vp-skip-arrow vp-skip-arrow-moving" /></>) : (<><ChevronRight size={32} strokeWidth={2.5} className="vp-skip-arrow vp-skip-arrow-fixed" /><ChevronRight size={32} strokeWidth={2.5} className="vp-skip-arrow vp-skip-arrow-moving" /></>)}</div></div>)}
 
       <div className={`vp-controls-overlay ${areControlsVisible ? 'vp-visible' : ''}`}>
@@ -356,28 +367,28 @@ const VideoPlayer = forwardRef(({
         </div>
         <div className="vp-controls-bar">
           <div className="vp-controls-left">
-             <button 
-               className="vp-control-button" 
-               onClick={isHost ? togglePlayPause : undefined} // Only host can play/pause
-               disabled={!isHost}
-             >
-               {playing ? <Pause size={20} /> : <Play size={20} />}<span className="vp-tooltip">{playing ? 'Pause' : 'Play'}</span>
-             </button>
-             {/* Volume is local, so everyone can control it */}
-             <div className="vp-volume-container" onMouseEnter={() => setIsVolumeAreaHovered(true)} onMouseLeave={() => setIsVolumeAreaHovered(false)}>
-               <button className="vp-control-button" onClick={toggleMute}>{isMuted || volume === 0 ? <VolumeX size={20} /> : <Volume2 size={20} />}<span className="vp-tooltip">{isMuted ? 'Unmute (M)' : 'Mute (M)'}</span></button>
-               {isVolumeAreaHovered && (<input type="range" min="0" max="1" step="0.01" value={volume} onChange={handleVolumeChange} className="vp-volume-slider" style={{ '--vp-volume-percent': `${volume * 100}%` }}/>)}
-             </div>
-             <div className="vp-timestamp">{formatTime(currentTime)} / {formatTime(duration)}</div>
+              <button 
+                className="vp-control-button" 
+                onClick={togglePlayPause} // <-- MODIFICATION: Removed 'isHost' check
+                // <-- MODIFICATION: Removed 'disabled={!isHost}'
+              >
+                {playing ? <Pause size={20} /> : <Play size={20} />}<span className="vp-tooltip">{playing ? 'Pause' : 'Play'}</span>
+              </button>
+              {/* Volume is local, so everyone can control it */}
+              <div className="vp-volume-container" onMouseEnter={() => setIsVolumeAreaHovered(true)} onMouseLeave={() => setIsVolumeAreaHovered(false)}>
+                <button className="vp-control-button" onClick={toggleMute}>{isMuted || volume === 0 ? <VolumeX size={20} /> : <Volume2 size={20} />}<span className="vp-tooltip">{isMuted ? 'Unmute (M)' : 'Mute (M)'}</span></button>
+                {isVolumeAreaHovered && (<input type="range" min="0" max="1" step="0.01" value={volume} onChange={handleVolumeChange} className="vp-volume-slider" style={{ '--vp-volume-percent': `${volume * 100}%` }}/>)}
+              </div>
+              <div className="vp-timestamp">{formatTime(currentTime)} / {formatTime(duration)}</div>
           </div>
           <div className="vp-controls-right">
-             {/* Playback speed is local, so everyone can control it */}
-             <div className="vp-speed-button-container">
-               <button className="vp-control-button vp-speed-button" onClick={() => setIsSpeedMenuOpen(prev => !prev)} title="Playback Speed"><Clock size={20} /><span className="vp-tooltip">{playbackRate}x</span></button>
-               {isSpeedMenuOpen && (<div className="vp-speed-menu" ref={speedMenuRef}>{PLAYBACK_SPEEDS.map(speed => (<button key={speed} className={`vp-speed-option ${playbackRate === speed ? 'vp-active' : ''}`} onClick={() => selectPlaybackSpeed(speed)}>{speed === 1 ? 'Normal' : `${speed}x`}</button>))}</div>)}
-             </div>
-             {/* Fullscreen is local, so everyone can control it */}
-             <button className="vp-control-button" onClick={toggleFullscreen}>{isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}</button>
+            {/* Playback speed is local, so everyone can control it */}
+            <div className="vp-speed-button-container">
+              <button className="vp-control-button vp-speed-button" onClick={() => setIsSpeedMenuOpen(prev => !prev)} title="Playback Speed"><Clock size={20} /><span className="vp-tooltip">{playbackRate}x</span></button>
+              {isSpeedMenuOpen && (<div className="vp-speed-menu" ref={speedMenuRef}>{PLAYBACK_SPEEDS.map(speed => (<button key={speed} className={`vp-speed-option ${playbackRate === speed ? 'vp-active' : ''}`} onClick={() => selectPlaybackSpeed(speed)}>{speed === 1 ? 'Normal' : `${speed}x`}</button>))}</div>)}
+            </div>
+            {/* Fullscreen is local, so everyone can control it */}
+            <button className="vp-control-button" onClick={toggleFullscreen}>{isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}</button>
           </div>
         </div>
       </div>
