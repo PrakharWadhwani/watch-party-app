@@ -90,17 +90,27 @@ app.post('/upload', upload.single('video'), (req, res) => {
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
+  // We will store the room here, on the socket itself.
+  // This is much more reliable than socket.rooms.
+  socket.currentRoom = null;
+
   const getRoom = () => {
-    return Array.from(socket.rooms)[1];
+    // We now primarily use our reliable socket.currentRoom property
+    return socket.currentRoom;
   };
 
   socket.on('join', (room) => {
     console.log(`User ${socket.id} trying to join room: '${room}'`);
-    const currentRoom = getRoom();
-    if (currentRoom) {
-      socket.leave(currentRoom);
+    
+    // Leave the old room if they were in one
+    const oldRoom = getRoom();
+    if (oldRoom) {
+      socket.leave(oldRoom);
     }
+
+    // Join the new room and store it
     socket.join(room);
+    socket.currentRoom = room; // <-- FIX: Store the room on join
     console.log(`User ${socket.id} joined room ${room}`);
 
     if (!roomState[room]) {
@@ -176,8 +186,15 @@ io.on('connection', (socket) => {
   // --- THIS IS THE FIXED DISCONNECT HANDLER ---
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);
-    const room = getRoom();
-    if (!room || !roomState[room]) return;
+    
+    // --- FIX: Use the reliable socket.currentRoom property ---
+    const room = socket.currentRoom; 
+    
+    if (!room || !roomState[room]) {
+      // This is normal if the user disconnected before joining a room
+      console.log(`User ${socket.id} was not in a room.`);
+      return;
+    }
 
     // Check if the disconnected user was the host
     if (roomState[room].host === socket.id) {
